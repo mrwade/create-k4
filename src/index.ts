@@ -86,6 +86,66 @@ export default defineConfig({
   });
 };
 
+const createNodeApp = (name: string, files: { [key: string]: string }) => {
+  const appDir = path.join("apps", name);
+  fs.mkdirSync(appDir, { recursive: true });
+
+  const packageJson = {
+    name: `@repo/${name}`,
+    private: true,
+    type: "module",
+    scripts: {
+      build: "tsup --clean",
+      "check-types": "tsc --noEmit",
+      dev: "tsup --watch --onSuccess 'pnpm start'",
+      start: "node dist/index.js",
+    },
+  };
+  fs.writeFileSync(
+    path.join(appDir, "package.json"),
+    JSON.stringify(packageJson, null, 2)
+  );
+
+  const tsConfig = {
+    extends: "@repo/typescript-config/base.json",
+  };
+  fs.writeFileSync(
+    path.join(appDir, "tsconfig.json"),
+    JSON.stringify(tsConfig, null, 2)
+  );
+
+  const tsupConfig = `
+import { defineConfig } from "tsup";
+
+export default defineConfig({
+  entry: ["src/index.ts"],
+  format: ["esm"],
+  splitting: false,
+  sourcemap: true,
+});
+`;
+  fs.writeFileSync(path.join(appDir, "tsup.config.ts"), tsupConfig);
+
+  Object.entries(files).forEach(([filePath, content]) => {
+    const fullPath = path.join(appDir, filePath);
+    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+    fs.writeFileSync(fullPath, content);
+  });
+
+  console.log(`Installing dependencies for ${name} app...`);
+  execSync(
+    "pnpm add @repo/typescript-config@workspace:* @repo/db@workspace:* @repo/queue@workspace:*",
+    {
+      stdio: "inherit",
+      cwd: appDir,
+    }
+  );
+  execSync("pnpm add -D tsup typescript", {
+    stdio: "inherit",
+    cwd: appDir,
+  });
+};
+
 const initializeMonorepo = async (appName: string) => {
   // Create root directory
   fs.mkdirSync(appName);
@@ -406,6 +466,84 @@ export async function enqueueAndWait<T extends JobType>(
     cwd: path.join("packages", "queue"),
   });
 
+  // Initialize worker app
+  createNodeApp("worker", {
+    "src/index.ts": `
+import { JobType, QUEUE_NAME, redis } from "@repo/queue";
+import { Worker } from "bullmq";
+import { runGeneratePosts } from "./jobs/generate-posts";
+
+const runners = {
+  [JobType.GeneratePosts]: runGeneratePosts,
+};
+
+new Worker(
+  QUEUE_NAME,
+  async (job) => {
+    const runner = runners[job.name as JobType];
+    if (!runner) {
+      console.error(\`Unknown job type\`, job.name);
+      throw new Error(\`Unknown job type \${job.name}\`);
+    }
+
+    console.log(\`[\${job.id}] \${job.name} - Running...\`, job.data);
+    await runner(job.data);
+    console.log(\`[\${job.id}] \${job.name} - Completed\`);
+  },
+  { connection: redis }
+);
+`,
+    "src/jobs/generate-posts.ts": `
+import { faker } from "@faker-js/faker";
+import { db, genId } from "@repo/db";
+import { JobData, JobType } from "@repo/queue";
+
+export const runGeneratePosts = async (
+  data: JobData[JobType.GeneratePosts]
+) => {
+  const { count } = data;
+
+  await db.$transaction(
+    Array.from({ length: count }).map(() => {
+      const data = {
+        id: genId(),
+        username: faker.internet.userName(),
+        fullName: faker.person.fullName(),
+        content: faker.lorem.paragraph({ min: 1, max: 3 }),
+        createdAt: faker.date.recent({ days: 30 }),
+      };
+      console.log(data);
+      return db.post.create({
+        data: {
+          id: data.id,
+          content: data.content,
+          createdAt: data.createdAt,
+          user: {
+            connectOrCreate: {
+              create: {
+                id: genId(),
+                name: data.fullName,
+                username: data.username,
+              },
+              where: {
+                username: data.username,
+              },
+            },
+          },
+        },
+      });
+    })
+  );
+};
+`,
+  });
+
+  console.log("Installing additional dependencies for worker app...");
+  execSync("pnpm add bullmq @faker-js/faker", {
+    stdio: "inherit",
+    cwd: path.join("apps", "worker"),
+  });
+
   console.log(`Monorepo ${appName} initialized successfully!`);
 };
 
@@ -437,64 +575,12 @@ const initializeApp = async (name: string, type?: string) => {
     });
   } else if (type === "node") {
     // Initialize Node.js app
-    const packageJson = {
-      name: `@repo/${name}`,
-      private: true,
-      type: "module",
-      scripts: {
-        build: "tsup --clean",
-        "check-types": "tsc --noEmit",
-        dev: "tsup --watch --onSuccess 'pnpm start'",
-        start: "node dist/index.js",
-      },
-    };
-    fs.writeFileSync(
-      path.join(appDir, "package.json"),
-      JSON.stringify(packageJson, null, 2)
-    );
-
-    // Create tsup.config.ts
-    const tsupConfig = `
-import { defineConfig } from "tsup";
-
-export default defineConfig({
-  entry: ["src/index.ts"],
-  format: ["esm"],
-  splitting: false,
-  sourcemap: true,
-});
-`;
-    fs.writeFileSync(path.join(appDir, "tsup.config.ts"), tsupConfig);
-
-    // Create tsconfig.json
-    const tsConfig = {
-      extends: "@repo/typescript-config/base.json",
-    };
-    fs.writeFileSync(
-      path.join(appDir, "tsconfig.json"),
-      JSON.stringify(tsConfig, null, 2)
-    );
-
-    // Create src/index.ts
-    fs.mkdirSync(path.join(appDir, "src"));
-    fs.writeFileSync(
-      path.join(appDir, "src", "index.ts"),
-      'console.log("Hello, World!");'
-    );
-
-    // Install dependencies including latest tsup and typescript
-    console.log("Installing dependencies for the Node.js app...");
-    execSync("pnpm add @repo/typescript-config@workspace:*", {
-      stdio: "inherit",
-      cwd: appDir,
+    createNodeApp(name, {
+      "src/index.ts": 'console.log("Hello, World!");',
     });
-    execSync("pnpm add -D tsup typescript", {
-      stdio: "inherit",
-      cwd: appDir,
-    });
+
+    console.log(`App ${name} initialized successfully!`);
   }
-
-  console.log(`App ${name} initialized successfully!`);
 };
 
 program
