@@ -216,6 +216,9 @@ const initializeMonorepo = async (appName: string) => {
   console.log("Installing @types/node...");
   execSync("pnpm add -w -D @types/node", { stdio: "inherit" });
 
+  // Add .prettierrc
+  fs.writeFileSync(".prettierrc", "{}");
+
   // Create turbo.json
   const turboConfig = {
     $schema: "https://turbo.build/schema.json",
