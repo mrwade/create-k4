@@ -151,9 +151,17 @@ const createNextApp = (name: string, files: { [key: string]: string } = {}) => {
 
   console.log(`Creating Next.js app: ${name}`);
   execSync(
-    `npx create-next-app@latest ${appDir} --typescript --eslint --tailwind --app --src-dir --import-alias "@/*" --use-pnpm --no-git`,
+    `npx create-next-app@latest ${appDir} --typescript --eslint --tailwind --app --src-dir --import-alias "@/*" --use-pnpm --disable-git`,
     { stdio: "inherit" }
   );
+
+  // Delete .git directory created by create-next-app
+  // The --disable-git flag is new and not released yet
+  const gitDir = path.join(appDir, ".git");
+  if (fs.existsSync(gitDir)) {
+    console.log(`Removing .git directory from ${name} app...`);
+    fs.rmSync(gitDir, { recursive: true, force: true });
+  }
 
   Object.entries(files).forEach(([filePath, content]) => {
     const fullPath = path.join(appDir, filePath);
@@ -742,6 +750,12 @@ To learn more about the technologies used in this project:
     stdio: "inherit",
     cwd: process.cwd(),
   });
+
+  // Initialize git repository
+  console.log("Initializing git repository...");
+  execSync("git init", { stdio: "inherit" });
+  execSync("git add .", { stdio: "inherit" });
+  execSync('git commit -m "Initial commit"', { stdio: "inherit" });
 
   console.log(`Monorepo ${appName} initialized successfully!`);
 };
