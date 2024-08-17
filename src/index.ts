@@ -62,6 +62,31 @@ const initializeMonorepo = async (appName: string) => {
   fs.writeFileSync("turbo.json", JSON.stringify(turboConfig, null, 2));
 
   // Initialize TypeScript config
+  fs.mkdirSync("packages/typescript-config", { recursive: true });
+
+  // Create package.json for typescript-config
+  const tsConfigPackageJson = {
+    name: "@repo/typescript-config",
+    version: "1.0.0",
+    private: true,
+    license: "MIT",
+    publishConfig: {
+      access: "public",
+    },
+  };
+  fs.writeFileSync(
+    "packages/typescript-config/package.json",
+    JSON.stringify(tsConfigPackageJson, null, 2)
+  );
+
+  // Install latest @tsconfig/node20
+  console.log("Installing latest @tsconfig/node20...");
+  execSync("pnpm add -D @tsconfig/node20", {
+    stdio: "inherit",
+    cwd: "packages/typescript-config",
+  });
+
+  // Create tsconfig base
   const tsConfigBase = {
     $schema: "https://json.schemastore.org/tsconfig",
     extends: "@tsconfig/node20/tsconfig.json",
@@ -70,7 +95,6 @@ const initializeMonorepo = async (appName: string) => {
       moduleResolution: "Bundler",
     },
   };
-  fs.mkdirSync("packages/typescript-config");
   fs.writeFileSync(
     "packages/typescript-config/base.json",
     JSON.stringify(tsConfigBase, null, 2)
@@ -84,7 +108,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: ${appName}_dev
+      POSTGRES_DB: ${appName.replace(/-/g, "_")}_dev
     ports:
       - "5432:5432"
     volumes:
@@ -115,7 +139,35 @@ services:
     JSON.stringify(dockerDevPackageJson, null, 2)
   );
 
+  // Create .gitignore file
+  const gitignoreContent = `
+# Dependencies
+node_modules
+
+# Builds
+.next/
+dist/
+
+# Misc
+.DS_Store
+*.pem
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local env files
+.env*.local
+
+# Turbo
+.turbo
+`;
+
+  fs.writeFileSync(".gitignore", gitignoreContent.trim());
+
   // Install dependencies
+  console.log("Installing dependencies...");
   execSync("pnpm install", { stdio: "inherit" });
 
   console.log(`Monorepo ${appName} initialized successfully!`);
@@ -186,6 +238,17 @@ export default defineConfig({
       path.join(appDir, "src", "index.ts"),
       'console.log("Hello, World!");'
     );
+
+    // Install dependencies including latest tsup and typescript
+    console.log("Installing dependencies for the Node.js app...");
+    execSync("pnpm add @repo/typescript-config@workspace:*", {
+      stdio: "inherit",
+      cwd: appDir,
+    });
+    execSync("pnpm add -D tsup typescript", {
+      stdio: "inherit",
+      cwd: appDir,
+    });
   }
 
   console.log(`App ${name} initialized successfully!`);
