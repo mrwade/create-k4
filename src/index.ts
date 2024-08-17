@@ -146,6 +146,28 @@ export default defineConfig({
   });
 };
 
+const createNextApp = (name: string, files: { [key: string]: string } = {}) => {
+  const appDir = path.join("apps", name);
+
+  console.log(`Creating Next.js app: ${name}`);
+  execSync(
+    `npx create-next-app@latest ${appDir} --typescript --eslint --tailwind --app --src-dir --import-alias "@/*" --use-pnpm --no-git`,
+    { stdio: "inherit" }
+  );
+
+  Object.entries(files).forEach(([filePath, content]) => {
+    const fullPath = path.join(appDir, filePath);
+    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+    fs.writeFileSync(fullPath, content);
+  });
+
+  console.log(`Installing additional dependencies for ${name} app...`);
+  execSync("pnpm add @repo/db@workspace:* @repo/queue@workspace:*", {
+    stdio: "inherit",
+    cwd: appDir,
+  });
+};
+
 const initializeMonorepo = async (appName: string) => {
   // Create root directory
   fs.mkdirSync(appName);
@@ -169,9 +191,10 @@ const initializeMonorepo = async (appName: string) => {
     packageManager: `pnpm@${pnpmVersion}`,
     scripts: {
       build: "turbo run build",
-      dev: "turbo run dev",
-      lint: "turbo run lint",
       "check-types": "turbo run check-types",
+      db: "pnpm --filter @repo/db",
+      "db:reset": "pnpm docker-dev db:reset && pnpm db migrate dev",
+      dev: "turbo run dev",
       test: "turbo run test",
     },
     devDependencies: {
@@ -253,6 +276,7 @@ const initializeMonorepo = async (appName: string) => {
   );
 
   // Initialize Docker Compose config
+  const dbName = `${appName.replace(/-/g, "_")}_dev`;
   const dockerComposeConfig = `
 services:
   postgres:
@@ -260,7 +284,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: ${appName.replace(/-/g, "_")}_dev
+      POSTGRES_DB: ${dbName}
     ports:
       - "5432:5432"
     volumes:
@@ -326,6 +350,15 @@ yarn-error.log*
   createPackage(
     "db",
     {
+      ".env": `
+# Environment variables declared in this file are automatically made available to Prisma.
+# See the documentation for more detail: https://pris.ly/d/prisma-schema#accessing-environment-variables-from-the-schema
+
+# Prisma supports the native connection string format for PostgreSQL, MySQL, SQLite, SQL Server, MongoDB and CockroachDB.
+# See the documentation for all the connection string options: https://pris.ly/d/connection-strings
+
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/${dbName}?schema=public"
+`,
       "prisma/schema.prisma": `
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
@@ -544,6 +577,169 @@ export const runGeneratePosts = async (
     cwd: path.join("apps", "worker"),
   });
 
+  // Initialize web app (Next.js)
+  createNextApp("web", {
+    "src/actions.ts": `
+"use server";
+
+import { enqueueAndWait, JobType } from "@repo/queue";
+import { revalidatePath } from "next/cache";
+
+export async function generatePosts() {
+  await enqueueAndWait(JobType.GeneratePosts, { count: 5 });
+  revalidatePath("/");
+}
+`,
+    "src/app/page.tsx": `
+import { generatePosts } from "@/actions";
+import { db } from "@repo/db";
+
+export default async function Home() {
+  const posts = await db.post.findMany({
+    select: {
+      id: true,
+      content: true,
+      createdAt: true,
+      user: { select: { id: true, username: true, name: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return (
+    <div className="max-w-2xl mx-auto p-4">
+      <form action={generatePosts} className="flex justify-end mb-6">
+        <button
+          type="submit"
+          className="bg-[#61afef] hover:bg-[#528bbd] text-[#1a1d24] font-bold py-2 px-4 rounded-md shadow-lg transition duration-300"
+        >
+          Generate Posts
+        </button>
+      </form>
+
+      {posts.map((post) => (
+        <div
+          key={post.id}
+          className="bg-[#21252b] shadow-lg rounded-md p-4 mb-4 border border-[#528bbd]"
+        >
+          <p className="font-bold text-[#ff79c6]">@{post.user.username}</p>
+          <p className="mt-2 text-[#dcdfe4]">{post.content}</p>
+          <p className="mt-2 text-sm text-[#50fa7b]">
+            {new Date(post.createdAt).toLocaleString()}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+`,
+    "src/app/globals.css": `
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 238, 238, 238;
+  --background-start-rgb: 30, 30, 30;
+  --background-end-rgb: 40, 40, 40;
+  --accent-color: 97, 175, 239;
+  --secondary-accent: 152, 195, 121;
+  --tertiary-accent: 229, 192, 123;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground-rgb: 255, 255, 255;
+    --background-start-rgb: 0, 0, 0;
+    --background-end-rgb: 0, 0, 0;
+  }
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+    to bottom right,
+    rgb(var(--background-start-rgb)),
+    rgb(var(--background-end-rgb))
+  );
+  min-height: 100vh;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+`,
+  });
+
+  // Create README.md
+  const readmeContent = `# ${appName}
+
+This is a monorepo project created with k4-cli.
+
+## Getting Started
+
+To boot up the project for the first time:
+
+1. Start the development environment:
+   \`\`\`
+   pnpm dev
+   \`\`\`
+   This command will start Docker containers and all the apps.
+
+2. Once Docker is up, migrate the database:
+   \`\`\`
+   pnpm db migrate dev
+   \`\`\`
+
+## Useful Commands
+
+- \`pnpm dev\`: Start the development environment
+- \`pnpm build\`: Build all packages and apps
+- \`pnpm check-types\`: Run type checking for all packages and apps
+- \`pnpm db\`: Run Prisma commands for the db package
+- \`pnpm db:reset\`: Reset the database and run migrations
+
+## Project Structure
+
+- \`apps/\`: Contains all the applications
+  - \`web/\`: Next.js web application
+  - \`worker/\`: Node.js worker application
+- \`packages/\`: Contains shared packages
+  - \`db/\`: Database package with Prisma setup
+  - \`queue/\`: Queue package for background jobs
+  - \`typescript-config/\`: Shared TypeScript configuration
+
+## Adding New Apps or Packages
+
+To add a new app or package to the monorepo, use the following command:
+
+\`\`\`
+k4 app <name> [--next | --node]
+\`\`\`
+
+This will create a new app in the \`apps/\` directory with the necessary configuration.
+
+## Learn More
+
+To learn more about the technologies used in this project:
+
+- [Turborepo](https://turbo.build/repo)
+- [pnpm](https://pnpm.io)
+- [Next.js](https://nextjs.org/docs)
+- [Prisma](https://www.prisma.io/docs/)
+- [BullMQ](https://docs.bullmq.io/)
+`;
+
+  fs.writeFileSync("README.md", readmeContent);
+
+  // Run build script for db package
+  console.log("Building db package...");
+  execSync("pnpm turbo run build --filter=@repo/db --ui stream", {
+    stdio: "inherit",
+    cwd: process.cwd(),
+  });
+
   console.log(`Monorepo ${appName} initialized successfully!`);
 };
 
@@ -561,26 +757,18 @@ const initializeApp = async (name: string, type?: string) => {
   const appDir = path.join("apps", name);
   fs.mkdirSync(appDir, { recursive: true });
 
-  if (type === "next") {
-    execSync(
-      `npx create-next-app@latest ${appDir} --typescript --eslint --use-pnpm`,
-      { stdio: "inherit" }
-    );
-
-    // Install db package for Next.js apps
-    console.log("Installing @repo/db package...");
-    execSync("pnpm add @repo/db@workspace:*", {
-      stdio: "inherit",
-      cwd: appDir,
-    });
-  } else if (type === "node") {
-    // Initialize Node.js app
-    createNodeApp(name, {
-      "src/index.ts": 'console.log("Hello, World!");',
-    });
-
-    console.log(`App ${name} initialized successfully!`);
+  switch (type) {
+    case "next":
+      createNextApp(name);
+      break;
+    case "node":
+      createNodeApp(name, {
+        "src/index.ts": 'console.log("Hello, World!");',
+      });
+      break;
   }
+
+  console.log(`App ${name} initialized successfully!`);
 };
 
 program
