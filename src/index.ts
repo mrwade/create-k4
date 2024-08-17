@@ -14,6 +14,78 @@ const getPnpmVersion = () => {
   }
 };
 
+const createPackage = (
+  packageName: string,
+  files: { [key: string]: string },
+  options?: {
+    scripts?: { [key: string]: string };
+  }
+) => {
+  const packageDir = path.join("packages", packageName);
+  fs.mkdirSync(packageDir, { recursive: true });
+  fs.mkdirSync(path.join(packageDir, "src"));
+
+  const packageJson = {
+    name: `@repo/${packageName}`,
+    private: true,
+    type: "module",
+    exports: {
+      ".": {
+        types: "./src/index.ts",
+        default: "./dist/index.js",
+      },
+    },
+    scripts: {
+      build: "tsup --clean",
+      "check-types": "tsc --noEmit",
+      dev: "tsup --watch",
+      ...options?.scripts,
+    },
+  };
+  fs.writeFileSync(
+    path.join(packageDir, "package.json"),
+    JSON.stringify(packageJson, null, 2)
+  );
+
+  const tsConfig = {
+    extends: "@repo/typescript-config/base.json",
+    compilerOptions: {
+      outDir: "./dist",
+    },
+    include: ["src/**/*"],
+    exclude: ["node_modules"],
+  };
+  fs.writeFileSync(
+    path.join(packageDir, "tsconfig.json"),
+    JSON.stringify(tsConfig, null, 2)
+  );
+
+  const tsupConfig = `
+import { defineConfig } from "tsup";
+
+export default defineConfig({
+  entry: ["src/index.ts"],
+  format: ["esm"],
+  splitting: false,
+  sourcemap: true,
+  clean: true,
+});
+`;
+  fs.writeFileSync(path.join(packageDir, "tsup.config.ts"), tsupConfig);
+
+  Object.entries(files).forEach(([filePath, content]) => {
+    const fullPath = path.join(packageDir, filePath);
+    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+    fs.writeFileSync(fullPath, content);
+  });
+
+  console.log(`Installing dependencies for ${packageName} package...`);
+  execSync("pnpm add -D tsup typescript @repo/typescript-config@workspace:*", {
+    stdio: "inherit",
+    cwd: packageDir,
+  });
+};
+
 const initializeMonorepo = async (appName: string) => {
   // Create root directory
   fs.mkdirSync(appName);
@@ -47,6 +119,10 @@ const initializeMonorepo = async (appName: string) => {
     },
   };
   fs.writeFileSync("package.json", JSON.stringify(packageJson, null, 2));
+
+  // Install @types/node
+  console.log("Installing @types/node...");
+  execSync("pnpm add -w -D @types/node", { stdio: "inherit" });
 
   // Create turbo.json
   const turboConfig = {
@@ -187,63 +263,10 @@ yarn-error.log*
   execSync("pnpm install", { stdio: "inherit" });
 
   // Initialize db package
-  const dbDir = path.join("packages", "db");
-  fs.mkdirSync(dbDir, { recursive: true });
-  fs.mkdirSync(path.join(dbDir, "src"));
-  fs.mkdirSync(path.join(dbDir, "prisma"));
-
-  // Create package.json for db
-  const dbPackageJson = {
-    name: "@repo/db",
-    private: true,
-    type: "module",
-    exports: {
-      ".": {
-        types: "./src/index.ts",
-        default: "./dist/index.js",
-      },
-    },
-    scripts: {
-      build: "pnpm build:prisma && tsup --clean",
-      "build:prisma": "prisma generate",
-      "check-types": "tsc --noEmit",
-      dev: "tsup --watch",
-      migrate: "prisma migrate",
-      push: "prisma db push",
-    },
-  };
-  fs.writeFileSync(
-    path.join(dbDir, "package.json"),
-    JSON.stringify(dbPackageJson, null, 2)
-  );
-
-  // Install dependencies
-  console.log("Installing dependencies for db package...");
-  execSync("pnpm add @prisma/client nanoid", {
-    stdio: "inherit",
-    cwd: dbDir,
-  });
-  execSync(
-    "pnpm add -D prisma tsup typescript @repo/typescript-config@workspace:*",
-    { stdio: "inherit", cwd: dbDir }
-  );
-
-  // Create tsconfig.json
-  const tsConfig = {
-    extends: "@repo/typescript-config/base.json",
-    compilerOptions: {
-      outDir: "./dist",
-    },
-    include: ["src/**/*"],
-    exclude: ["node_modules"],
-  };
-  fs.writeFileSync(
-    path.join(dbDir, "tsconfig.json"),
-    JSON.stringify(tsConfig, null, 2)
-  );
-
-  // Create prisma schema
-  const prismaSchema = `
+  createPackage(
+    "db",
+    {
+      "prisma/schema.prisma": `
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
@@ -278,31 +301,22 @@ model User {
 
   @@map("users")
 }
-`;
-  fs.writeFileSync(path.join(dbDir, "prisma", "schema.prisma"), prismaSchema);
-
-  // Create util.ts
-  const utilTs = `
+`,
+      "src/util.ts": `
 import { customAlphabet } from "nanoid";
 
 export const genId = customAlphabet(
   "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
   12
 );
-`;
-  fs.writeFileSync(path.join(dbDir, "src", "util.ts"), utilTs);
-
-  // Create index.ts
-  const indexTs = `
+`,
+      "src/index.ts": `
 export { Prisma, PrismaClient } from "@prisma/client";
 export type { Post as PostEntity, User as UserEntity } from "@prisma/client";
 export { db } from "./db";
 export { genId } from "./util";
-`;
-  fs.writeFileSync(path.join(dbDir, "src", "index.ts"), indexTs);
-
-  // Create db.ts
-  const dbTs = `
+`,
+      "src/db.ts": `
 import { PrismaClient } from "@prisma/client";
 
 declare global {
@@ -327,23 +341,70 @@ if (isServer) {
 }
 
 export { db };
-`;
-  fs.writeFileSync(path.join(dbDir, "src", "db.ts"), dbTs);
+`,
+    },
+    {
+      scripts: {
+        build: "pnpm build:prisma && tsup --clean",
+        "build:prisma": "prisma generate",
+        "check-types": "tsc --noEmit",
+        dev: "tsup --watch",
+        migrate: "prisma migrate",
+        push: "prisma db push",
+      },
+    }
+  );
+  console.log("Installing additional dependencies for db package...");
+  const dbDir = path.join("packages", "db");
+  execSync("pnpm add @prisma/client nanoid", {
+    stdio: "inherit",
+    cwd: dbDir,
+  });
+  execSync("pnpm add -D prisma", {
+    stdio: "inherit",
+    cwd: dbDir,
+  });
 
-  // Create tsup.config.ts
-  const tsupConfig = `
-import { defineConfig } from "tsup";
+  createPackage("queue", {
+    "src/index.ts": `
+import { Queue, QueueEvents } from "bullmq";
+import Redis from "ioredis";
 
-export default defineConfig({
-  entry: ["src/index.ts"],
-  format: ["esm"],
-  splitting: false,
-  sourcemap: true,
-  clean: true,
-  external: ["nanoid"],
-});
-`;
-  fs.writeFileSync(path.join(dbDir, "tsup.config.ts"), tsupConfig);
+const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
+export const redis = new Redis(REDIS_URL, { maxRetriesPerRequest: null });
+
+export const QUEUE_NAME = "queue";
+export const queue = new Queue(QUEUE_NAME, { connection: redis });
+
+export enum JobType {
+  GeneratePosts = "generate-posts",
+}
+
+export type JobData = {
+  [JobType.GeneratePosts]: { count: number };
+};
+
+export async function enqueue<T extends JobType>(type: T, data: JobData[T]) {
+  return queue.add(type, data);
+}
+
+const queueEvents = new QueueEvents(QUEUE_NAME);
+export async function enqueueAndWait<T extends JobType>(
+  type: T,
+  data: JobData[T]
+) {
+  const job = await enqueue(type, data);
+  await job.waitUntilFinished(queueEvents);
+  return job;
+}
+`,
+  });
+
+  console.log("Installing additional dependencies for queue package...");
+  execSync("pnpm add bullmq ioredis", {
+    stdio: "inherit",
+    cwd: path.join("packages", "queue"),
+  });
 
   console.log(`Monorepo ${appName} initialized successfully!`);
 };
