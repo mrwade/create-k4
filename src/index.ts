@@ -193,6 +193,7 @@ const initializeMonorepo = async (appName: string) => {
       build: "turbo run build",
       "check-types": "turbo run check-types",
       db: "pnpm --filter @repo/db",
+      "db:init": "pnpm db migrate dev --name init",
       "db:reset": "pnpm docker-dev db:reset && pnpm db migrate dev",
       dev: "turbo run dev",
       test: "turbo run test",
@@ -687,10 +688,12 @@ To boot up the project for the first time:
    \`\`\`
    This command will start Docker containers and all the apps.
 
-2. Once Docker is up, migrate the database:
+2. Once Docker is up, create the initial migration and migrate the database:
    \`\`\`
-   pnpm db migrate dev
+   pnpm db:init
    \`\`\`
+
+3. Open the web app: http://localhost:3000
 
 ## Useful Commands
 
