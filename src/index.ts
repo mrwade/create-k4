@@ -3,6 +3,16 @@ import { execSync } from "child_process";
 import { program } from "commander";
 import fs from "fs-extra";
 import path from "path";
+import prettier from "prettier";
+
+const getPnpmVersion = () => {
+  try {
+    return execSync("pnpm --version", { encoding: "utf8" }).trim();
+  } catch (error) {
+    console.warn("Could not determine pnpm version. Using default.");
+    return "9.7.0"; // Fallback version
+  }
+};
 
 const initializeMonorepo = async (appName: string) => {
   // Create root directory
@@ -20,9 +30,11 @@ const initializeMonorepo = async (appName: string) => {
   fs.mkdirSync("packages");
 
   // Initialize package.json
+  const pnpmVersion = getPnpmVersion();
   const packageJson = {
     name: appName,
     private: true,
+    packageManager: `pnpm@${pnpmVersion}`,
     scripts: {
       build: "turbo run build",
       dev: "turbo run dev",
@@ -59,7 +71,11 @@ const initializeMonorepo = async (appName: string) => {
       },
     },
   };
-  fs.writeFileSync("turbo.json", JSON.stringify(turboConfig, null, 2));
+  const formattedTurboConfig = await prettier.format(
+    JSON.stringify(turboConfig),
+    { parser: "json" }
+  );
+  fs.writeFileSync("turbo.json", formattedTurboConfig);
 
   // Initialize TypeScript config
   fs.mkdirSync("packages/typescript-config", { recursive: true });
