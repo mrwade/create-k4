@@ -386,7 +386,7 @@ datasource db {
 
 model Post {
   id        String   @id @db.VarChar(12)
-  userId    String   @db.VarChar(12)
+  userId    String   @db.VarChar(12) @map("user_id")
   user      User     @relation(fields: [userId], references: [id])
   content   String   @db.VarChar(240)
   createdAt DateTime @default(now()) @map("created_at")
