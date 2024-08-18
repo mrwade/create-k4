@@ -877,12 +877,12 @@ const initializeApp = async (name: string, type?: string) => {
 };
 
 program
-  .name("k4")
+  .name("create-k4")
   .description("CLI to bootstrap and manage pnpm/turborepo monorepos")
-  .version("0.1.0");
+  .version("1.0.0");
 
 program
-  .command("init <name>")
+  .argument("<name>", "Name of the monorepo")
   .description("Initialize a new monorepo")
   .action(initializeMonorepo);
 
