@@ -206,15 +206,12 @@ const initializeMonorepo = async (appName: string) => {
       dev: "turbo run dev",
       test: "turbo run test",
     },
-    devDependencies: {
-      turbo: "latest",
-    },
   };
   fs.writeFileSync("package.json", JSON.stringify(packageJson, null, 2));
 
-  // Install @types/node
-  console.log("Installing @types/node...");
-  execSync("pnpm add -w -D @types/node", { stdio: "inherit" });
+  // Install workspace dependencies
+  console.log("Installing workspace dependencies...");
+  execSync("pnpm add -w -D turbo typescript @types/node", { stdio: "inherit" });
 
   // Add .prettierrc
   fs.writeFileSync(".prettierrc", "{}");
@@ -285,6 +282,16 @@ const initializeMonorepo = async (appName: string) => {
   fs.writeFileSync(
     "packages/typescript-config/base.json",
     JSON.stringify(tsConfigBase, null, 2)
+  );
+
+  // Create .vscode/settings.json file
+  const vscodeSettings = {
+    "typescript.tsdk": "node_modules/typescript/lib",
+  };
+  fs.mkdirSync(".vscode", { recursive: true });
+  fs.writeFileSync(
+    ".vscode/settings.json",
+    JSON.stringify(vscodeSettings, null, 2)
   );
 
   // Initialize Docker Compose config
