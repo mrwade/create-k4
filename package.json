@@ -1,5 +1,5 @@
 {
-  "name": "k4-cli",
+  "name": "create-k4",
   "version": "0.1.0",
   "description": "CLI to bootstrap and manage pnpm/turborepo monorepos",
   "keywords": [
@@ -13,7 +13,7 @@
   "exports": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "k4": "./bin/k4"
+    "create-k4": "./bin/create-k4"
   },
   "scripts": {
     "build": "tsup"
