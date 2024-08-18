@@ -260,6 +260,7 @@ const initializeMonorepo = async (appName: string) => {
       "db:init": "pnpm db migrate dev --name init",
       "db:reset": "pnpm docker-dev db:reset && pnpm db migrate dev",
       dev: "turbo run dev",
+      "docker-dev": "pnpm --filter @repo/docker-dev",
       format: "prettier --write .",
       lint: "turbo run lint",
       test: "turbo run test",
@@ -697,7 +698,7 @@ export default async function Home() {
       <form action={generatePosts} className="flex justify-end mb-6">
         <button
           type="submit"
-          className="bg-[#61afef] hover:bg-[#528bbd] text-[#1a1d24] font-bold py-2 px-4 rounded-md shadow-lg transition duration-300"
+          className="bg-[#4a5a8a] hover:bg-[#3a4a7a] text-[#e6e6eb] font-bold py-2 px-4 rounded-md shadow-lg transition duration-300"
         >
           Generate Posts
         </button>
@@ -706,11 +707,11 @@ export default async function Home() {
       {posts.map((post) => (
         <div
           key={post.id}
-          className="bg-[#21252b] shadow-lg rounded-md p-4 mb-4 border border-[#528bbd]"
+          className="bg-[#1a1a2a] shadow-lg rounded-md p-4 mb-4 border border-[#3a4a7a]"
         >
-          <p className="font-bold text-[#ff79c6]">@{post.user.username}</p>
-          <p className="mt-2 text-[#dcdfe4]">{post.content}</p>
-          <p className="mt-2 text-sm text-[#50fa7b]">
+          <p className="font-bold text-[#a0b0ff]">@{post.user.username}</p>
+          <p className="mt-2 text-[#dcdceb]">{post.content}</p>
+          <p className="mt-2 text-sm text-[#8090c0]">
             {new Date(post.createdAt).toLocaleString()}
           </p>
         </div>
@@ -725,12 +726,8 @@ export default async function Home() {
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 238, 238, 238;
-  --background-start-rgb: 30, 30, 30;
-  --background-end-rgb: 40, 40, 40;
-  --accent-color: 97, 175, 239;
-  --secondary-accent: 152, 195, 121;
-  --tertiary-accent: 229, 192, 123;
+  --background-start-rgb: 25, 25, 35;
+  --background-end-rgb: 35, 35, 50;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -741,8 +738,13 @@ export default async function Home() {
   }
 }
 
+html,
 body {
-  color: rgb(var(--foreground-rgb));
+  background-color: rgb(var(--background-start-rgb));
+}
+
+body {
+  color: rgb(220, 220, 235);
   background: linear-gradient(
     to bottom right,
     rgb(var(--background-start-rgb)),
@@ -762,7 +764,7 @@ body {
   // Create README.md
   const readmeContent = `# ${appName}
 
-This is a monorepo project created with k4-cli.
+This is a monorepo project created with create-k4.
 
 ## Getting Started
 
@@ -797,6 +799,7 @@ To boot up the project for the first time:
 - \`packages/\`: Contains shared packages
   - \`db/\`: Database package with Prisma setup
   - \`queue/\`: Queue package for background jobs
+  - \`eslint-config/\`: Shared ESLint configuration
   - \`typescript-config/\`: Shared TypeScript configuration
 
 ## Adding New Apps or Packages
@@ -804,7 +807,7 @@ To boot up the project for the first time:
 To add a new app or package to the monorepo, use the following command:
 
 \`\`\`
-k4 app <name> [--next | --node]
+create-k4 app <name> [--next | --node]
 \`\`\`
 
 This will create a new app in the \`apps/\` directory with the necessary configuration.
@@ -818,6 +821,9 @@ To learn more about the technologies used in this project:
 - [Next.js](https://nextjs.org/docs)
 - [Prisma](https://www.prisma.io/docs/)
 - [BullMQ](https://docs.bullmq.io/)
+- [ESLint](https://eslint.org/)
+- [Prettier](https://prettier.io/)
+- [TypeScript](https://www.typescriptlang.org/)
 `;
 
   fs.writeFileSync("README.md", readmeContent);
