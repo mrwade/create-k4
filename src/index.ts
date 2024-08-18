@@ -67,9 +67,8 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: ["src/index.ts"],
   format: ["esm"],
-  splitting: false,
-  sourcemap: true,
   clean: true,
+  sourcemap: true,
 });
 `;
   fs.writeFileSync(path.join(packageDir, "tsup.config.ts"), tsupConfig);
@@ -80,16 +79,11 @@ export default defineConfig({
     fs.writeFileSync(fullPath, content);
   });
 
-  const eslintConfig = `
-import nodeConfig from "@repo/eslint-config/node";
-
-export default [...nodeConfig];
-`.trim();
-  fs.writeFileSync(path.join(packageDir, "eslint.config.js"), eslintConfig);
+  createEslintConfig(packageDir);
 
   console.log(`Installing dependencies for ${packageName} package...`);
   execSync(
-    "pnpm add -D tsup typescript @repo/typescript-config@workspace:* @repo/eslint-config@workspace:* eslint",
+    "pnpm add -D tsup typescript @repo/typescript-config@workspace:* @repo/eslint-config@workspace:*",
     {
       stdio: "inherit",
       cwd: packageDir,
@@ -132,7 +126,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: ["src/index.ts"],
   format: ["esm"],
-  splitting: false,
+  clean: true,
   sourcemap: true,
 });
 `;
@@ -144,12 +138,7 @@ export default defineConfig({
     fs.writeFileSync(fullPath, content);
   });
 
-  const eslintConfig = `
-import nodeConfig from "@repo/eslint-config/node";
-
-export default [...nodeConfig];
-`.trim();
-  fs.writeFileSync(path.join(appDir, "eslint.config.js"), eslintConfig);
+  createEslintConfig(appDir);
 
   console.log(`Installing dependencies for ${name} app...`);
   execSync(
@@ -159,7 +148,7 @@ export default [...nodeConfig];
       cwd: appDir,
     }
   );
-  execSync("pnpm add -D tsup typescript eslint", {
+  execSync("pnpm add -D tsup typescript", {
     stdio: "inherit",
     cwd: appDir,
   });
@@ -195,7 +184,7 @@ const createNextApp = (name: string, files: { [key: string]: string } = {}) => {
   });
 };
 
-const createEslintConfig = () => {
+const createEslintConfigPackage = () => {
   const packageDir = path.join("packages", "eslint-config");
   fs.mkdirSync(packageDir, { recursive: true });
 
@@ -234,6 +223,15 @@ export default [
   });
 };
 
+const createEslintConfig = (dir: string) => {
+  const eslintConfig = `
+import nodeConfig from "@repo/eslint-config/node";
+
+export default [...nodeConfig, { ignores: ["dist/"] }];
+`.trim();
+  fs.writeFileSync(path.join(dir, "eslint.config.js"), eslintConfig);
+};
+
 const initializeMonorepo = async (appName: string) => {
   // Create root directory
   fs.mkdirSync(appName);
@@ -262,6 +260,7 @@ const initializeMonorepo = async (appName: string) => {
       "db:init": "pnpm db migrate dev --name init",
       "db:reset": "pnpm docker-dev db:reset && pnpm db migrate dev",
       dev: "turbo run dev",
+      format: "prettier --write .",
       lint: "turbo run lint",
       test: "turbo run test",
     },
@@ -270,10 +269,13 @@ const initializeMonorepo = async (appName: string) => {
 
   // Install workspace dependencies
   console.log("Installing workspace dependencies...");
-  execSync("pnpm add -w -D turbo typescript @types/node", { stdio: "inherit" });
+  execSync("pnpm add -w -D @types/node prettier turbo typescript", {
+    stdio: "inherit",
+  });
 
-  // Add .prettierrc
+  // Add prettier
   fs.writeFileSync(".prettierrc", "{}");
+  fs.writeFileSync(".prettierignore", "pnpm-lock.yaml");
 
   // Create turbo.json
   const turboConfig = {
@@ -357,7 +359,7 @@ const initializeMonorepo = async (appName: string) => {
   );
 
   // Create eslint-config package
-  createEslintConfig();
+  createEslintConfigPackage();
 
   // Initialize Docker Compose config
   const dbName = `${appName.replace(/-/g, "_")}_dev`;
@@ -826,6 +828,10 @@ To learn more about the technologies used in this project:
     stdio: "inherit",
     cwd: process.cwd(),
   });
+
+  // Format all files
+  console.log("Formatting all files...");
+  execSync("pnpm format", { stdio: "inherit" });
 
   // Initialize git repository
   console.log("Initializing git repository...");
