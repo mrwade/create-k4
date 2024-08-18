@@ -39,6 +39,7 @@ const createPackage = (
       build: "tsup --clean",
       "check-types": "tsc --noEmit",
       dev: "tsup --watch",
+      lint: "eslint .",
       ...options?.scripts,
     },
   };
@@ -79,11 +80,21 @@ export default defineConfig({
     fs.writeFileSync(fullPath, content);
   });
 
+  const eslintConfig = `
+import nodeConfig from "@repo/eslint-config/node";
+
+export default [...nodeConfig];
+`.trim();
+  fs.writeFileSync(path.join(packageDir, "eslint.config.js"), eslintConfig);
+
   console.log(`Installing dependencies for ${packageName} package...`);
-  execSync("pnpm add -D tsup typescript @repo/typescript-config@workspace:*", {
-    stdio: "inherit",
-    cwd: packageDir,
-  });
+  execSync(
+    "pnpm add -D tsup typescript @repo/typescript-config@workspace:* @repo/eslint-config@workspace:* eslint",
+    {
+      stdio: "inherit",
+      cwd: packageDir,
+    }
+  );
 };
 
 const createNodeApp = (name: string, files: { [key: string]: string }) => {
@@ -98,6 +109,7 @@ const createNodeApp = (name: string, files: { [key: string]: string }) => {
       build: "tsup --clean",
       "check-types": "tsc --noEmit",
       dev: "tsup --watch --onSuccess 'pnpm start'",
+      lint: "eslint .",
       start: "node dist/index.js",
     },
   };
@@ -132,15 +144,22 @@ export default defineConfig({
     fs.writeFileSync(fullPath, content);
   });
 
+  const eslintConfig = `
+import nodeConfig from "@repo/eslint-config/node";
+
+export default [...nodeConfig];
+`.trim();
+  fs.writeFileSync(path.join(appDir, "eslint.config.js"), eslintConfig);
+
   console.log(`Installing dependencies for ${name} app...`);
   execSync(
-    "pnpm add @repo/typescript-config@workspace:* @repo/db@workspace:* @repo/queue@workspace:*",
+    "pnpm add @repo/typescript-config@workspace:* @repo/db@workspace:* @repo/queue@workspace:* @repo/eslint-config@workspace:*",
     {
       stdio: "inherit",
       cwd: appDir,
     }
   );
-  execSync("pnpm add -D tsup typescript", {
+  execSync("pnpm add -D tsup typescript eslint", {
     stdio: "inherit",
     cwd: appDir,
   });
@@ -176,6 +195,45 @@ const createNextApp = (name: string, files: { [key: string]: string } = {}) => {
   });
 };
 
+const createEslintConfig = () => {
+  const packageDir = path.join("packages", "eslint-config");
+  fs.mkdirSync(packageDir, { recursive: true });
+
+  const packageJson = {
+    name: "@repo/eslint-config",
+    version: "0.1.0",
+    private: true,
+    type: "module",
+    exports: {
+      "./node": "./node.js",
+    },
+  };
+  fs.writeFileSync(
+    path.join(packageDir, "package.json"),
+    JSON.stringify(packageJson, null, 2)
+  );
+
+  const eslintConfig = `
+import globals from "globals";
+import pluginJs from "@eslint/js";
+import tseslint from "typescript-eslint";
+
+export default [
+  {files: ["**/*.{js,mjs,cjs,ts}"]},
+  {languageOptions: { globals: globals.node }},
+  pluginJs.configs.recommended,
+  ...tseslint.configs.recommended,
+];
+`;
+  fs.writeFileSync(path.join(packageDir, "node.js"), eslintConfig);
+
+  console.log("Installing dependencies for eslint-config package...");
+  execSync("pnpm install @eslint/js typescript-eslint eslint globals", {
+    stdio: "inherit",
+    cwd: packageDir,
+  });
+};
+
 const initializeMonorepo = async (appName: string) => {
   // Create root directory
   fs.mkdirSync(appName);
@@ -204,6 +262,7 @@ const initializeMonorepo = async (appName: string) => {
       "db:init": "pnpm db migrate dev --name init",
       "db:reset": "pnpm docker-dev db:reset && pnpm db migrate dev",
       dev: "turbo run dev",
+      lint: "turbo run lint",
       test: "turbo run test",
     },
   };
@@ -232,6 +291,9 @@ const initializeMonorepo = async (appName: string) => {
       dev: {
         cache: false,
         persistent: true,
+      },
+      lint: {
+        dependsOn: ["^lint"],
       },
       test: {
         cache: false,
@@ -293,6 +355,9 @@ const initializeMonorepo = async (appName: string) => {
     ".vscode/settings.json",
     JSON.stringify(vscodeSettings, null, 2)
   );
+
+  // Create eslint-config package
+  createEslintConfig();
 
   // Initialize Docker Compose config
   const dbName = `${appName.replace(/-/g, "_")}_dev`;
@@ -432,6 +497,7 @@ export { genId } from "./util";
 import { PrismaClient } from "@prisma/client";
 
 declare global {
+  // eslint-disable-next-line no-var
   var prisma: PrismaClient | undefined;
 }
 
