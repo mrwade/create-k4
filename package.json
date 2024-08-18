@@ -1,6 +1,6 @@
 {
   "name": "create-k4",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "CLI to bootstrap and manage pnpm/turborepo monorepos",
   "keywords": [
     "cli",
@@ -10,13 +10,18 @@
   ],
   "author": "Kevin Wade",
   "license": "MIT",
-  "exports": "./dist/index.js",
+  "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
     "create-k4": "./bin/create-k4"
   },
+  "files": [
+    "dist",
+    "bin"
+  ],
   "scripts": {
-    "build": "tsup"
+    "build": "tsup",
+    "prepublishOnly": "pnpm build"
   },
   "dependencies": {
     "@inquirer/prompts": "^5.3.8",
